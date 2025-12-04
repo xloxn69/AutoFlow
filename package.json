@@ -29,7 +29,11 @@
   "scripts": {
     "dev": "tsup --watch",
     "build": "tsup",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest run --coverage"
   },
   "keywords": [
     "workflow",
@@ -55,7 +59,9 @@
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/react": "^18.0.0",
+    "@vitest/ui": "^4.0.15",
     "tsup": "^8.0.0",
-    "typescript": "^5.3.0"
+    "typescript": "^5.3.0",
+    "vitest": "^3.2.4"
   }
 }

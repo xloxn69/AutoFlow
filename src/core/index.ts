@@ -20,3 +20,24 @@ export {
   type WorkflowLintResult,
   type LintConfig,
 } from './validator'
+
+export {
+  // Permission mappings
+  ACTION_PERMISSION_MAPPINGS,
+  TRIGGER_PERMISSION_MAPPINGS,
+  PERMISSION_SEVERITY,
+  PERMISSION_DESCRIPTIONS,
+
+  // Permission utility functions
+  hasActionPermissionMapping,
+  hasTriggerPermissionMapping,
+  getPermissionSeverity,
+  getPermissionDescription,
+} from './permission-mappings'
+
+export {
+  // Pack permission aggregator
+  PackPermissionAggregator,
+  type AutomaterPack,
+  type PermissionSummary,
+} from './pack-aggregator'

@@ -5,6 +5,13 @@
  * Can run in Node.js, browser, Deno, or any JavaScript runtime
  */
 
+import {
+  ACTION_PERMISSION_MAPPINGS,
+  TRIGGER_PERMISSION_MAPPINGS,
+  hasActionPermissionMapping,
+  hasTriggerPermissionMapping
+} from './permission-mappings'
+
 // Core workflow interfaces
 export interface AutomaterWorkflow {
   id: string
@@ -301,6 +308,13 @@ export class AutoFlowValidator {
       issues.push(...performanceIssues)
       rulesExecuted += 3
 
+      // 6. Automatic permission detection
+      if (workflow.trigger && workflow.nodes) {
+        const permissionIssues = this.detectAndValidatePermissions(workflow as AutomaterWorkflow)
+        issues.push(...permissionIssues)
+        rulesExecuted += 1
+      }
+
       // Filter issues based on configuration
       const filteredIssues = this.filterIssues(issues)
 
@@ -587,6 +601,132 @@ export class AutoFlowValidator {
     }
 
     return issues
+  }
+
+  /**
+   * Automatically detects required Discord permissions by analyzing workflow graph
+   * This method populates workflow.permissions and node.permissions fields
+   *
+   * @param workflow - The workflow to analyze
+   * @returns Array of validation issues (warnings for unknown actions)
+   */
+  private detectAndValidatePermissions(workflow: AutomaterWorkflow): LintIssue[] {
+    const issues: LintIssue[] = []
+    const requiredPermissions = new Set<string>()
+
+    // 1. Check trigger permissions
+    const triggerEvent = workflow.trigger?.event
+    if (triggerEvent && hasTriggerPermissionMapping(triggerEvent)) {
+      const triggerPerms = TRIGGER_PERMISSION_MAPPINGS[triggerEvent]
+      triggerPerms.forEach(perm => requiredPermissions.add(perm))
+    }
+
+    // 2. Check action permissions for each node in workflow
+    for (const node of workflow.nodes) {
+      if (node.type === 'action' && node.action) {
+        if (hasActionPermissionMapping(node.action)) {
+          const actionPerms = ACTION_PERMISSION_MAPPINGS[node.action]
+          actionPerms.forEach(perm => requiredPermissions.add(perm))
+
+          // Auto-populate node-level permissions for granular tracking
+          node.permissions = actionPerms
+        } else {
+          // Unknown action - add warning if security rules are enabled
+          if (this.isRuleEnabled('security/missing-permissions')) {
+            issues.push(this.createIssue('security/missing-permissions', 3311, {
+              message: `Unknown action '${node.action}' - cannot detect required permissions`,
+              location: { nodeId: node.id },
+              suggestions: [
+                'Check if action is implemented in permission-mappings.ts',
+                'Add permission mapping for this action type'
+              ]
+            }))
+          }
+
+          // Set empty permissions array for unknown actions
+          node.permissions = []
+        }
+      }
+    }
+
+    // 3. Auto-populate workflow-level permissions (union of all node permissions)
+    workflow.permissions = Array.from(requiredPermissions).sort()
+
+    return issues
+  }
+
+  /**
+   * Public API: Detect required permissions for a workflow without mutating it
+   * Returns sorted array of permission flags
+   *
+   * @param workflow - The workflow to analyze
+   * @returns Array of required Discord permission flags (e.g., ['SEND_MESSAGES', 'BAN_MEMBERS'])
+   */
+  public detectRequiredPermissions(workflow: AutomaterWorkflow): string[] {
+    const requiredPermissions = new Set<string>()
+
+    // Check trigger permissions
+    const triggerEvent = workflow.trigger?.event
+    if (triggerEvent && hasTriggerPermissionMapping(triggerEvent)) {
+      const triggerPerms = TRIGGER_PERMISSION_MAPPINGS[triggerEvent]
+      triggerPerms.forEach(perm => requiredPermissions.add(perm))
+    }
+
+    // Check action permissions for each node
+    for (const node of workflow.nodes) {
+      if (node.type === 'action' && node.action) {
+        if (hasActionPermissionMapping(node.action)) {
+          const actionPerms = ACTION_PERMISSION_MAPPINGS[node.action]
+          actionPerms.forEach(perm => requiredPermissions.add(perm))
+        }
+      }
+    }
+
+    // Return sorted array for consistent output
+    return Array.from(requiredPermissions).sort()
+  }
+
+  /**
+   * Public API: Get detailed permission breakdown by node
+   * Useful for debugging and UI displays
+   *
+   * @param workflow - The workflow to analyze
+   * @returns Detailed permission information
+   */
+  public getPermissionBreakdown(workflow: AutomaterWorkflow): {
+    totalPermissions: string[]
+    triggerPermissions: string[]
+    nodePermissions: Map<string, string[]>
+    unknownActions: string[]
+  } {
+    const triggerPermissions: string[] = []
+    const nodePermissions = new Map<string, string[]>()
+    const unknownActions: string[] = []
+
+    // Analyze trigger
+    const triggerEvent = workflow.trigger?.event
+    if (triggerEvent && hasTriggerPermissionMapping(triggerEvent)) {
+      triggerPermissions.push(...TRIGGER_PERMISSION_MAPPINGS[triggerEvent])
+    }
+
+    // Analyze each node
+    for (const node of workflow.nodes) {
+      if (node.type === 'action' && node.action) {
+        if (hasActionPermissionMapping(node.action)) {
+          nodePermissions.set(node.id, ACTION_PERMISSION_MAPPINGS[node.action])
+        } else {
+          unknownActions.push(node.action)
+          nodePermissions.set(node.id, [])
+        }
+      }
+    }
+
+    return {
+      totalPermissions: this.detectRequiredPermissions(workflow),
+      triggerPermissions,
+      nodePermissions,
+      unknownActions
+    }
   }
 
   // Helper methods
