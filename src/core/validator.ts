@@ -158,12 +158,12 @@ export const DEFAULT_LINT_CONFIG: LintConfig = {
     'perf/missing-weight': 'warn',
     'perf/high-weight': 'warn',
     'perf/deep-nesting': 'warn',
-    'perf/large-workflow': 'info',
+    'perf/large-workflow': 'warn',
 
     // Style rules
     'style/naming-convention': 'warn',
     'style/description-required': 'warn',
-    'style/icon-color-consistency': 'info',
+    'style/icon-color-consistency': 'warn',
     'style/deprecated-features': 'warn'
   },
   settings: {
@@ -371,14 +371,14 @@ export class AutoFlowValidator {
    * Quick validation for minimal node structure
    * Accepts any object with id, type, action, params, connections, weight
    */
-  async validateNodes(nodes: Array<{
+  validateNodes(nodes: Array<{
     id: string
     type?: string
     action?: string
     params?: Record<string, unknown>
     connections?: string[]
     weight?: number
-  }>): Promise<LintIssue[]> {
+  }>): LintIssue[] {
     const issues: LintIssue[] = []
 
     // Convert minimal nodes to WorkflowNode format

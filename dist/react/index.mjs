@@ -3,6 +3,252 @@
 // src/react/hooks.ts
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 
+// src/core/permission-mappings.ts
+var ACTION_PERMISSION_MAPPINGS = {
+  // ============================================================================
+  // MESSAGING ACTIONS
+  // ============================================================================
+  /**
+   * Send Message - Sends a message to a specified channel
+   * Required: SEND_MESSAGES (send), VIEW_CHANNEL (see channel)
+   */
+  "send_message": ["SEND_MESSAGES", "VIEW_CHANNEL"],
+  /**
+   * Edit Message - Edits a bot's own message
+   * Required: SEND_MESSAGES (implies edit own messages), VIEW_CHANNEL
+   */
+  "edit_message": ["SEND_MESSAGES", "VIEW_CHANNEL"],
+  /**
+   * Send Direct Message - Sends a DM to a user
+   * Required: None (DMs don't require guild permissions)
+   */
+  "send_direct_message": [],
+  /**
+   * Delete Message - Deletes any message (including others' messages)
+   * Required: MANAGE_MESSAGES (delete others' messages), VIEW_CHANNEL
+   */
+  "delete_message": ["MANAGE_MESSAGES", "VIEW_CHANNEL"],
+  /**
+   * Log Event - Logs an event in a specified channel (sends message)
+   * Required: SEND_MESSAGES, VIEW_CHANNEL
+   */
+  "log_event": ["SEND_MESSAGES", "VIEW_CHANNEL"],
+  // ============================================================================
+  // USER MANAGEMENT ACTIONS
+  // ============================================================================
+  /**
+   * Add Role - Adds a role to a user
+   * Required: MANAGE_ROLES (role management)
+   * Note: Bot's highest role must be above target role
+   */
+  "add_role": ["MANAGE_ROLES"],
+  /**
+   * Remove Role - Removes a role from a user
+   * Required: MANAGE_ROLES (role management)
+   * Note: Bot's highest role must be above target role
+   */
+  "remove_role": ["MANAGE_ROLES"],
+  /**
+   * Change Nickname - Changes a user's nickname
+   * Required: MANAGE_NICKNAMES (change others' nicknames)
+   */
+  "change_nickname": ["MANAGE_NICKNAMES"],
+  // ============================================================================
+  // MODERATION ACTIONS
+  // ============================================================================
+  /**
+   * Kick User - Kicks a user from the server
+   * Required: KICK_MEMBERS (kick permission)
+   * Note: Bot's highest role must be above target user
+   */
+  "kick_user": ["KICK_MEMBERS"],
+  /**
+   * Ban User - Bans a user from the server
+   * Required: BAN_MEMBERS (ban permission)
+   * Note: Bot's highest role must be above target user
+   */
+  "ban_user": ["BAN_MEMBERS"],
+  /**
+   * Unban User - Unbans a user from the server
+   * Required: BAN_MEMBERS (same permission as ban)
+   */
+  "unban_user": ["BAN_MEMBERS"],
+  /**
+   * Mute User - Times out a user (Discord timeout feature)
+   * Required: MODERATE_MEMBERS (timeout permission)
+   * Note: Bot's highest role must be above target user
+   */
+  "mute_user": ["MODERATE_MEMBERS"],
+  /**
+   * Unmute User - Removes timeout from a user
+   * Required: MODERATE_MEMBERS (timeout permission)
+   */
+  "unmute_user": ["MODERATE_MEMBERS"],
+  // ============================================================================
+  // CHANNEL MANAGEMENT ACTIONS
+  // ============================================================================
+  /**
+   * Create Channel - Creates a new text/voice/category channel
+   * Required: MANAGE_CHANNELS (create/edit channels)
+   */
+  "create_channel": ["MANAGE_CHANNELS"],
+  /**
+   * Delete Channel - Deletes a channel
+   * Required: MANAGE_CHANNELS (delete channels)
+   */
+  "delete_channel": ["MANAGE_CHANNELS"],
+  /**
+   * Create Category - Creates a new category
+   * Required: MANAGE_CHANNELS (create/edit channels)
+   */
+  "create_category": ["MANAGE_CHANNELS"],
+  /**
+   * Modify Channel - Modifies channel properties (name, topic, slowmode, etc.)
+   * Required: MANAGE_CHANNELS (edit channels)
+   */
+  "modify_channel": ["MANAGE_CHANNELS"],
+  // ============================================================================
+  // REACTION & INTERACTION ACTIONS
+  // ============================================================================
+  /**
+   * Add Reaction - Adds a reaction emoji to a message
+   * Required: ADD_REACTIONS (add reactions), VIEW_CHANNEL (see message)
+   */
+  "add_reaction": ["ADD_REACTIONS", "VIEW_CHANNEL"],
+  /**
+   * Remove Reaction - Removes a reaction from a message (any user's reaction)
+   * Required: MANAGE_MESSAGES (remove others' reactions), VIEW_CHANNEL
+   */
+  "remove_reaction": ["MANAGE_MESSAGES", "VIEW_CHANNEL"],
+  /**
+   * Pin Message - Pins a message in a channel
+   * Required: MANAGE_MESSAGES (pin/unpin messages), VIEW_CHANNEL
+   */
+  "pin_message": ["MANAGE_MESSAGES", "VIEW_CHANNEL"],
+  /**
+   * Unpin Message - Unpins a message in a channel
+   * Required: MANAGE_MESSAGES (pin/unpin messages), VIEW_CHANNEL
+   */
+  "unpin_message": ["MANAGE_MESSAGES", "VIEW_CHANNEL"],
+  // ============================================================================
+  // DATA MANAGEMENT ACTIONS (No Discord permissions needed)
+  // ============================================================================
+  /**
+   * Variable Update - Updates a workflow variable value
+   * Required: None (internal data operation)
+   */
+  "variable_update": [],
+  /**
+   * Database Insert - Inserts data into ForgeDB
+   * Required: None (internal database operation)
+   */
+  "database_insert": [],
+  /**
+   * Database Query - Queries data from ForgeDB
+   * Required: None (internal database operation)
+   */
+  "database_query": [],
+  // ============================================================================
+  // EXTERNAL INTEGRATION ACTIONS
+  // ============================================================================
+  /**
+   * Webhook Send - Sends data to a Discord webhook
+   * Required: MANAGE_WEBHOOKS (create/manage webhooks)
+   */
+  "webhook_send": ["MANAGE_WEBHOOKS"],
+  /**
+   * HTTP Request - Makes HTTP requests to external APIs
+   * Required: None (external API, not Discord)
+   */
+  "http_request": [],
+  /**
+   * Create Invite - Creates a server invite link
+   * Required: CREATE_INSTANT_INVITE (create invites)
+   */
+  "create_invite": ["CREATE_INSTANT_INVITE"]
+};
+var TRIGGER_PERMISSION_MAPPINGS = {
+  // ============================================================================
+  // USER MANAGEMENT TRIGGERS (Passive - no permissions needed)
+  // ============================================================================
+  "user_join": [],
+  "user_leave": [],
+  "user_ban": [],
+  "user_kick": [],
+  "user_update": [],
+  // ============================================================================
+  // MESSAGE SYSTEM TRIGGERS
+  // ============================================================================
+  /**
+   * Send Message (Message Create) - Bot receives message events
+   * Required: VIEW_CHANNEL (see messages in channel)
+   */
+  "send_message": ["VIEW_CHANNEL"],
+  /**
+   * Message Delete - Bot receives message delete events
+   * Required: VIEW_CHANNEL (see channel where deletion occurred)
+   */
+  "message_delete": ["VIEW_CHANNEL"],
+  /**
+   * Message Edit - Bot receives message edit events
+   * Required: VIEW_CHANNEL (see channel where edit occurred)
+   */
+  "message_edit": ["VIEW_CHANNEL"],
+  // ============================================================================
+  // CHANNEL MANAGEMENT TRIGGERS (Passive - no permissions needed)
+  // ============================================================================
+  "channel_create": [],
+  "channel_delete": [],
+  // ============================================================================
+  // ROLE MANAGEMENT TRIGGERS (Passive - no permissions needed)
+  // ============================================================================
+  "role_create": [],
+  "role_delete": [],
+  "role_add": [],
+  "role_remove": [],
+  // ============================================================================
+  // REACTION SYSTEM TRIGGERS
+  // ============================================================================
+  /**
+   * Reaction Add - Bot receives reaction add events
+   * Required: VIEW_CHANNEL (see reactions on messages)
+   */
+  "reaction_add": ["VIEW_CHANNEL"],
+  /**
+   * Reaction Remove - Bot receives reaction remove events
+   * Required: VIEW_CHANNEL (see reactions on messages)
+   */
+  "reaction_remove": ["VIEW_CHANNEL"],
+  // ============================================================================
+  // VOICE SYSTEM TRIGGERS
+  // ============================================================================
+  /**
+   * Voice Channel Join - Bot tracks voice channel joins
+   * Required: VIEW_CHANNEL (see voice channel) + CONNECT (track voice state)
+   */
+  "voice_channel_join": ["VIEW_CHANNEL", "CONNECT"],
+  /**
+   * Voice Channel Leave - Bot tracks voice channel leaves
+   * Required: VIEW_CHANNEL (see voice channel) + CONNECT (track voice state)
+   */
+  "voice_channel_leave": ["VIEW_CHANNEL", "CONNECT"],
+  // ============================================================================
+  // SERVER MANAGEMENT TRIGGERS (Passive - no permissions needed)
+  // ============================================================================
+  "server_update": [],
+  // ============================================================================
+  // COMMAND SYSTEM TRIGGERS (Passive - permissions checked at execution time)
+  // ============================================================================
+  "slash_command": [],
+  "prefixed_command": []
+};
+function hasActionPermissionMapping(action) {
+  return action in ACTION_PERMISSION_MAPPINGS;
+}
+function hasTriggerPermissionMapping(trigger) {
+  return trigger in TRIGGER_PERMISSION_MAPPINGS;
+}
+
 // src/core/validator.ts
 var DEFAULT_LINT_CONFIG = {
   rules: {
@@ -36,11 +282,11 @@ var DEFAULT_LINT_CONFIG = {
     "perf/missing-weight": "warn",
     "perf/high-weight": "warn",
     "perf/deep-nesting": "warn",
-    "perf/large-workflow": "info",
+    "perf/large-workflow": "warn",
     // Style rules
     "style/naming-convention": "warn",
     "style/description-required": "warn",
-    "style/icon-color-consistency": "info",
+    "style/icon-color-consistency": "warn",
     "style/deprecated-features": "warn"
   },
   settings: {
@@ -162,6 +408,11 @@ var AutoFlowValidator = class {
       const performanceIssues = this.validatePerformance(workflow);
       issues.push(...performanceIssues);
       rulesExecuted += 3;
+      if (workflow.trigger && workflow.nodes) {
+        const permissionIssues = this.detectAndValidatePermissions(workflow);
+        issues.push(...permissionIssues);
+        rulesExecuted += 1;
+      }
       const filteredIssues = this.filterIssues(issues);
       const errors = filteredIssues.filter((i) => i.severity === "error");
       const warnings = filteredIssues.filter((i) => i.severity === "warn");
@@ -212,7 +463,7 @@ var AutoFlowValidator = class {
    * Quick validation for minimal node structure
    * Accepts any object with id, type, action, params, connections, weight
    */
-  async validateNodes(nodes) {
+  validateNodes(nodes) {
     const issues = [];
     const workflowNodes = nodes.map((node) => ({
       id: node.id,
@@ -378,6 +629,101 @@ var AutoFlowValidator = class {
       }
     }
     return issues;
+  }
+  /**
+   * Automatically detects required Discord permissions by analyzing workflow graph
+   * This method populates workflow.permissions and node.permissions fields
+   *
+   * @param workflow - The workflow to analyze
+   * @returns Array of validation issues (warnings for unknown actions)
+   */
+  detectAndValidatePermissions(workflow) {
+    const issues = [];
+    const requiredPermissions = /* @__PURE__ */ new Set();
+    const triggerEvent = workflow.trigger?.event;
+    if (triggerEvent && hasTriggerPermissionMapping(triggerEvent)) {
+      const triggerPerms = TRIGGER_PERMISSION_MAPPINGS[triggerEvent];
+      triggerPerms.forEach((perm) => requiredPermissions.add(perm));
+    }
+    for (const node of workflow.nodes) {
+      if (node.type === "action" && node.action) {
+        if (hasActionPermissionMapping(node.action)) {
+          const actionPerms = ACTION_PERMISSION_MAPPINGS[node.action];
+          actionPerms.forEach((perm) => requiredPermissions.add(perm));
+          node.permissions = actionPerms;
+        } else {
+          if (this.isRuleEnabled("security/missing-permissions")) {
+            issues.push(this.createIssue("security/missing-permissions", 3311, {
+              message: `Unknown action '${node.action}' - cannot detect required permissions`,
+              location: { nodeId: node.id },
+              suggestions: [
+                "Check if action is implemented in permission-mappings.ts",
+                "Add permission mapping for this action type"
+              ]
+            }));
+          }
+          node.permissions = [];
+        }
+      }
+    }
+    workflow.permissions = Array.from(requiredPermissions).sort();
+    return issues;
+  }
+  /**
+   * Public API: Detect required permissions for a workflow without mutating it
+   * Returns sorted array of permission flags
+   *
+   * @param workflow - The workflow to analyze
+   * @returns Array of required Discord permission flags (e.g., ['SEND_MESSAGES', 'BAN_MEMBERS'])
+   */
+  detectRequiredPermissions(workflow) {
+    const requiredPermissions = /* @__PURE__ */ new Set();
+    const triggerEvent = workflow.trigger?.event;
+    if (triggerEvent && hasTriggerPermissionMapping(triggerEvent)) {
+      const triggerPerms = TRIGGER_PERMISSION_MAPPINGS[triggerEvent];
+      triggerPerms.forEach((perm) => requiredPermissions.add(perm));
+    }
+    for (const node of workflow.nodes) {
+      if (node.type === "action" && node.action) {
+        if (hasActionPermissionMapping(node.action)) {
+          const actionPerms = ACTION_PERMISSION_MAPPINGS[node.action];
+          actionPerms.forEach((perm) => requiredPermissions.add(perm));
+        }
+      }
+    }
+    return Array.from(requiredPermissions).sort();
+  }
+  /**
+   * Public API: Get detailed permission breakdown by node
+   * Useful for debugging and UI displays
+   *
+   * @param workflow - The workflow to analyze
+   * @returns Detailed permission information
+   */
+  getPermissionBreakdown(workflow) {
+    const triggerPermissions = [];
+    const nodePermissions = /* @__PURE__ */ new Map();
+    const unknownActions = [];
+    const triggerEvent = workflow.trigger?.event;
+    if (triggerEvent && hasTriggerPermissionMapping(triggerEvent)) {
+      triggerPermissions.push(...TRIGGER_PERMISSION_MAPPINGS[triggerEvent]);
+    }
+    for (const node of workflow.nodes) {
+      if (node.type === "action" && node.action) {
+        if (hasActionPermissionMapping(node.action)) {
+          nodePermissions.set(node.id, ACTION_PERMISSION_MAPPINGS[node.action]);
+        } else {
+          unknownActions.push(node.action);
+          nodePermissions.set(node.id, []);
+        }
+      }
+    }
+    return {
+      totalPermissions: this.detectRequiredPermissions(workflow),
+      triggerPermissions,
+      nodePermissions,
+      unknownActions
+    };
   }
   // Helper methods
   filterIssues(issues) {
