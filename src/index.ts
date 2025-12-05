@@ -33,6 +33,20 @@ export {
   type LintConfig,
 } from './core/validator'
 
+export {
+  PackPermissionAggregator,
+  type AutomaterPack,
+  type PermissionSummary,
+  ACTION_PERMISSION_MAPPINGS,
+  TRIGGER_PERMISSION_MAPPINGS,
+  PERMISSION_SEVERITY,
+  PERMISSION_DESCRIPTIONS,
+  hasActionPermissionMapping,
+  hasTriggerPermissionMapping,
+  getPermissionSeverity,
+  getPermissionDescription,
+} from './core'
+
 // React exports (requires React + ReactFlow)
 export {
   useWorkflowLinting,

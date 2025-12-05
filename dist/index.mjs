@@ -237,11 +237,72 @@ var TRIGGER_PERMISSION_MAPPINGS = {
   "slash_command": [],
   "prefixed_command": []
 };
+var PERMISSION_SEVERITY = {
+  // DANGEROUS - Severe impact
+  "ADMINISTRATOR": "dangerous",
+  "BAN_MEMBERS": "dangerous",
+  "KICK_MEMBERS": "dangerous",
+  "MANAGE_GUILD": "dangerous",
+  "MANAGE_ROLES": "dangerous",
+  "MANAGE_WEBHOOKS": "dangerous",
+  "MODERATE_MEMBERS": "dangerous",
+  // MODERATE - Significant impact
+  "MANAGE_CHANNELS": "moderate",
+  "MANAGE_MESSAGES": "moderate",
+  "MANAGE_NICKNAMES": "moderate",
+  "MANAGE_THREADS": "moderate",
+  "MANAGE_EVENTS": "moderate",
+  "MANAGE_EMOJIS_AND_STICKERS": "moderate",
+  // SAFE - Minimal impact
+  "SEND_MESSAGES": "safe",
+  "VIEW_CHANNEL": "safe",
+  "ADD_REACTIONS": "safe",
+  "CREATE_INSTANT_INVITE": "safe",
+  "READ_MESSAGE_HISTORY": "safe",
+  "SEND_MESSAGES_IN_THREADS": "safe",
+  "EMBED_LINKS": "safe",
+  "ATTACH_FILES": "safe",
+  "USE_EXTERNAL_EMOJIS": "safe",
+  "USE_EXTERNAL_STICKERS": "safe",
+  "CONNECT": "safe",
+  "SPEAK": "safe",
+  "STREAM": "safe",
+  "USE_VAD": "safe",
+  "CHANGE_NICKNAME": "safe",
+  "USE_APPLICATION_COMMANDS": "safe"
+};
+var PERMISSION_DESCRIPTIONS = {
+  "SEND_MESSAGES": "Allows sending messages in text channels",
+  "VIEW_CHANNEL": "Allows viewing channels and reading message history",
+  "MANAGE_MESSAGES": "Allows deleting messages from other users and pinning messages",
+  "MANAGE_ROLES": "Allows creating, editing, and deleting roles below bot's highest role",
+  "BAN_MEMBERS": "Allows banning and unbanning members",
+  "KICK_MEMBERS": "Allows kicking members from the server",
+  "MANAGE_CHANNELS": "Allows creating, editing, and deleting channels",
+  "MANAGE_NICKNAMES": "Allows changing other members' nicknames",
+  "MODERATE_MEMBERS": "Allows timing out members to prevent them from sending messages",
+  "ADD_REACTIONS": "Allows adding reactions to messages",
+  "MANAGE_WEBHOOKS": "Allows creating, editing, and deleting webhooks",
+  "CREATE_INSTANT_INVITE": "Allows creating instant invites to the server",
+  "ADMINISTRATOR": "Grants all permissions and bypasses channel permission overwrites",
+  "MANAGE_GUILD": "Allows managing server settings and configurations",
+  "CONNECT": "Allows joining voice channels",
+  "SPEAK": "Allows speaking in voice channels",
+  "MANAGE_THREADS": "Allows managing threads (archive, delete, view private threads)",
+  "MANAGE_EVENTS": "Allows creating, editing, and deleting server events",
+  "MANAGE_EMOJIS_AND_STICKERS": "Allows managing custom emojis and stickers"
+};
 function hasActionPermissionMapping(action) {
   return action in ACTION_PERMISSION_MAPPINGS;
 }
 function hasTriggerPermissionMapping(trigger) {
   return trigger in TRIGGER_PERMISSION_MAPPINGS;
+}
+function getPermissionSeverity(permission) {
+  return PERMISSION_SEVERITY[permission] || "safe";
+}
+function getPermissionDescription(permission) {
+  return PERMISSION_DESCRIPTIONS[permission] || `Discord permission: ${permission}`;
 }
 
 // src/core/validator.ts
@@ -762,6 +823,166 @@ var AutoFlowValidator = class {
   }
 };
 
+// src/core/pack-aggregator.ts
+var PackPermissionAggregator = class {
+  constructor(validator) {
+    this.validator = validator;
+  }
+  /**
+   * Aggregates permissions from all automations in a pack
+   * Returns the union of all required permissions
+   *
+   * @param pack - The pack containing multiple automations
+   * @returns Array of all unique permissions required (sorted alphabetically)
+   *
+   * @example
+   * ```typescript
+   * const aggregator = new PackPermissionAggregator(validator)
+   * const permissions = aggregator.aggregatePackPermissions(moderationPack)
+   * // Returns: ['BAN_MEMBERS', 'KICK_MEMBERS', 'MANAGE_MESSAGES', 'SEND_MESSAGES']
+   * ```
+   */
+  aggregatePackPermissions(pack) {
+    const allPermissions = /* @__PURE__ */ new Set();
+    for (const automation of pack.automations || []) {
+      const workflowPermissions = this.validator.detectRequiredPermissions(automation);
+      workflowPermissions.forEach((perm) => allPermissions.add(perm));
+    }
+    return Array.from(allPermissions).sort();
+  }
+  /**
+   * Generates a detailed permission summary for a pack
+   * Provides breakdown of shared vs unique permissions, useful for pack analysis
+   *
+   * @param pack - The pack to analyze
+   * @returns Detailed permission breakdown
+   *
+   * @example
+   * ```typescript
+   * const summary = aggregator.generatePermissionSummary(moderationPack)
+   * console.log(`Total permissions: ${summary.totalPermissions.length}`)
+   * console.log(`Shared permissions: ${summary.sharedPermissions.join(', ')}`)
+   * ```
+   */
+  generatePermissionSummary(pack) {
+    const permissionsByAutomation = {};
+    const permissionUsageCount = {};
+    for (const automation of pack.automations || []) {
+      const perms = this.validator.detectRequiredPermissions(automation);
+      permissionsByAutomation[automation.id] = perms;
+      perms.forEach((perm) => {
+        permissionUsageCount[perm] = (permissionUsageCount[perm] || 0) + 1;
+      });
+    }
+    const sharedPermissions = Object.entries(permissionUsageCount).filter(([_, count]) => count > 1).map(([perm, _]) => perm).sort();
+    const uniquePermissions = {};
+    for (const [automationId, perms] of Object.entries(permissionsByAutomation)) {
+      uniquePermissions[automationId] = perms.filter(
+        (perm) => permissionUsageCount[perm] === 1
+      );
+    }
+    const totalPermissions = this.aggregatePackPermissions(pack);
+    return {
+      totalPermissions,
+      permissionsByAutomation,
+      sharedPermissions,
+      uniquePermissions,
+      automationCount: pack.automations?.length || 0,
+      permissionCount: totalPermissions.length
+    };
+  }
+  /**
+   * Compare permission requirements between two packs
+   * Useful for pack version upgrades or alternative pack comparisons
+   *
+   * @param packA - First pack to compare
+   * @param packB - Second pack to compare
+   * @returns Comparison result showing added, removed, and common permissions
+   *
+   * @example
+   * ```typescript
+   * const comparison = aggregator.comparePackPermissions(oldVersion, newVersion)
+   * if (comparison.addedPermissions.length > 0) {
+   *   console.log(`New permissions required: ${comparison.addedPermissions.join(', ')}`)
+   * }
+   * ```
+   */
+  comparePackPermissions(packA, packB) {
+    const permsA = new Set(this.aggregatePackPermissions(packA));
+    const permsB = new Set(this.aggregatePackPermissions(packB));
+    const addedPermissions = Array.from(permsB).filter((p) => !permsA.has(p)).sort();
+    const removedPermissions = Array.from(permsA).filter((p) => !permsB.has(p)).sort();
+    const commonPermissions = Array.from(permsA).filter((p) => permsB.has(p)).sort();
+    return {
+      addedPermissions,
+      removedPermissions,
+      commonPermissions,
+      packATotal: Array.from(permsA).sort(),
+      packBTotal: Array.from(permsB).sort()
+    };
+  }
+  /**
+   * Calculates pack permission "weight" based on severity
+   * Higher weight = more dangerous permissions
+   *
+   * Scoring:
+   * - Dangerous permission: 10 points (BAN_MEMBERS, KICK_MEMBERS, etc.)
+   * - Moderate permission: 3 points (MANAGE_MESSAGES, MANAGE_CHANNELS, etc.)
+   * - Safe permission: 1 point (SEND_MESSAGES, VIEW_CHANNEL, etc.)
+   *
+   * @param pack - The pack to analyze
+   * @returns Numeric weight score
+   *
+   * @example
+   * ```typescript
+   * const weight = aggregator.calculatePackPermissionWeight(pack)
+   * if (weight > 50) {
+   *   console.warn('This pack requires dangerous permissions')
+   * }
+   * ```
+   */
+  calculatePackPermissionWeight(pack) {
+    const permissions = this.aggregatePackPermissions(pack);
+    let weight = 0;
+    for (const perm of permissions) {
+      const severity = getPermissionSeverity(perm);
+      switch (severity) {
+        case "dangerous":
+          weight += 10;
+          break;
+        case "moderate":
+          weight += 3;
+          break;
+        case "safe":
+          weight += 1;
+          break;
+      }
+    }
+    return weight;
+  }
+  /**
+   * Checks if a pack has any dangerous permissions
+   * Returns list of dangerous permissions if found
+   *
+   * @param pack - The pack to check
+   * @returns Array of dangerous permission flags
+   *
+   * @example
+   * ```typescript
+   * const dangerous = aggregator.getDangerousPermissions(pack)
+   * if (dangerous.length > 0) {
+   *   alert(`Warning: This pack requires dangerous permissions: ${dangerous.join(', ')}`)
+   * }
+   * ```
+   */
+  getDangerousPermissions(pack) {
+    const permissions = this.aggregatePackPermissions(pack);
+    return permissions.filter(
+      (perm) => getPermissionSeverity(perm) === "dangerous"
+    );
+  }
+};
+
 // src/react/hooks.ts
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 function useWorkflowLinting(nodes, edges, options = {}) {
@@ -1001,10 +1222,19 @@ function createWorkflowFromReactFlow(nodes, edges) {
   };
 }
 export {
+  ACTION_PERMISSION_MAPPINGS,
   AutoFlowValidator,
   AutoFlowValidator as AutomaterLinter,
   DEFAULT_LINT_CONFIG,
+  PERMISSION_DESCRIPTIONS,
+  PERMISSION_SEVERITY,
+  PackPermissionAggregator,
+  TRIGGER_PERMISSION_MAPPINGS,
   createWorkflowFromReactFlow,
+  getPermissionDescription,
+  getPermissionSeverity,
+  hasActionPermissionMapping,
+  hasTriggerPermissionMapping,
   useEdgeLinting,
   useGroupedIssues,
   useNodeLinting,
