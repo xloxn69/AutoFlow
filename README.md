@@ -208,3 +208,4 @@ MIT - See LICENSE file for details
 
 - `@automater/shared-types` - Shared TypeScript types
 - `@automater/shared-utils` - Shared utility functions
+<!-- YOLO badge -->
